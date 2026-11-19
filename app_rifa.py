@@ -9,7 +9,7 @@ from supabase import create_client
 # ==============================================================================
 # CONFIGURAÇÃO DA PÁGINA (VISUAL LIMPO PARA CELULAR)
 # ==============================================================================
-st.set_page_config(page_title="Campanha Entre Amigos", page_icon="🎟️", layout="centered")
+st.set_page_config(page_title="Ação Entre Amigos", page_icon="🎟️", layout="centered")
 
 st.markdown(
     """
@@ -36,12 +36,12 @@ st.markdown(
 # ==============================================================================
 # VARIÁVEIS DE AMBIENTE / CREDENCIAIS
 # ==============================================================================
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "").strip()
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv("SUPABASE_URL", "")).strip()
+SUPABASE_KEY = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")).strip()
+MP_ACCESS_TOKEN = st.secrets.get("MP_ACCESS_TOKEN", os.getenv("MP_ACCESS_TOKEN", "")).strip()
 
 RIFA_CONFIG = {
-    "titulo": "🏆 Campanha Oficial - Prêmio em Dinheiro - Pix de R$ 750,00",
+    "titulo": "🏆 Ação Entre Amigos - Prêmio em Dinheiro - Pix de R$ 750,00",
     "descricao": (
         "Escolha seus números favoritos, preencha seus dados e gere o Pix na hora. "
         "Assim que o pagamento é confirmado, seus números ficam garantidos."
@@ -224,7 +224,7 @@ st.session_state.selecionados = [n for n in st.session_state.selecionados if n n
 st.title(RIFA_CONFIG["titulo"])
 st.write(RIFA_CONFIG["descricao"])
 
-with st.expander("📜 Regras da Rifa", expanded=True):
+with st.expander("📜 Regras da Ação", expanded=True):
     st.markdown(RIFA_CONFIG["regras"].replace("\n", "  \n"))
 
 st.caption(
@@ -308,24 +308,38 @@ if st.session_state.pix_atual:
     pix = st.session_state.pix_atual
     nums_str = ", ".join(f"{n:02d}" for n in pix["numeros"])
 
-    st.success(
-        f"Pix gerado para os números **{nums_str}** — Total: **R$ {pix['valor_total']:.2f}**"
-    )
-    st.image(base64.b64decode(pix["qr_code_base64"]), caption="Escaneie o QR Code no app do seu banco", width=240)
+    if pix.get("status_pagamento") == "approved":
+        st.success(
+            f"✅ Pagamento aprovado! Os números **{nums_str}** (R$ {pix['valor_total']:.2f}) já estão garantidos como PAGO."
+        )
+        if st.button("➕ Escolher mais números"):
+            st.session_state.pix_atual = None
+            st.rerun()
+    else:
+        st.info(
+            f"Pix gerado para os números **{nums_str}** — Total: **R$ {pix['valor_total']:.2f}**"
+        )
+        st.image(base64.b64decode(pix["qr_code_base64"]), caption="Escaneie o QR Code no app do seu banco", width=240)
+        st.code(pix["qr_code"], language=None)
 
-    st.text_input("Pix Copia e Cola", value=pix["qr_code"])
+        col_chk, col_new = st.columns(2)
+        with col_chk:
+            if st.button("🔄 Já paguei, conferir"):
+                try:
+                    status_mp = consultar_status_pix(pix["payment_id"])
+                    if status_mp == "approved":
+                        marcar_pagamento_como_pago(pix["payment_id"])
+                        pix["status_pagamento"] = "approved"
+                        st.rerun()
+                    else:
+                        st.warning(f"Pagamento ainda pendente (status: {status_mp}). Aguarde alguns segundos e clique novamente.")
+                except Exception as exc:
+                    st.error(f"Erro ao consultar pagamento: {exc}")
 
-    col_chk, col_new = st.columns(2)
-    with col_chk:
-        if st.button("🔄 Já paguei, conferir"):
-            try:
-                status_mp = consultar_status_pix(pix["payment_id"])
-                if status_mp == "approved":
-                    marcar_pagamento_como_pago(pix["payment_id"])
-                    pix["status_pagamento"] = "approved"
-                    st.success("Pagamento aprovado! Seus números agora estão confirmados como PAGO.")
-                    st.rerun()
-                else:
+        with col_new:
+            if st.button("➕ Escolher mais"):
+                st.session_state.pix_atual = None
+                st.rerun()                else:
                     st.info(f"Pagamento ainda em análise/pendente (status: {status_mp}). Aguarde alguns segundos e tente de novo.")
             except Exception as exc:
                 st.error(f"Erro ao consultar pagamento: {exc}")
