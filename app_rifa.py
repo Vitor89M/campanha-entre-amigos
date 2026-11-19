@@ -339,7 +339,8 @@ if st.session_state.pix_atual:
         with col_new:
             if st.button("➕ Escolher mais"):
                 st.session_state.pix_atual = None
-                st.rerun()                else:
+                st.rerun()                
+            else:
                     st.info(f"Pagamento ainda em análise/pendente (status: {status_mp}). Aguarde alguns segundos e tente de novo.")
             except Exception as exc:
                 st.error(f"Erro ao consultar pagamento: {exc}")
