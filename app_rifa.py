@@ -41,7 +41,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "").strip()
 
 RIFA_CONFIG = {
-    "titulo": "🏆 Campanha Oficial - Prêmio em Dinheiro direto no PIX",
+    "titulo": "🏆 Campanha Oficial - Prêmio em Dinheiro - Pix de R$ 750,00",
     "descricao": (
         "Escolha seus números favoritos, preencha seus dados e gere o Pix na hora. "
         "Assim que o pagamento é confirmado, seus números ficam garantidos."
