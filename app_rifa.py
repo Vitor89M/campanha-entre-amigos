@@ -9,7 +9,7 @@ from supabase import create_client
 # ==============================================================================
 # CONFIGURAÇÃO DA PÁGINA (VISUAL LIMPO PARA CELULAR)
 # ==============================================================================
-st.set_page_config(page_title="Rifa Rápida", page_icon="🎟️", layout="centered")
+st.set_page_config(page_title="Campanha Entre Amigos", page_icon="🎟️", layout="centered")
 
 st.markdown(
     """
@@ -41,7 +41,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "").strip()
 
 RIFA_CONFIG = {
-    "titulo": "🏆 Rifa Oficial - Prêmio em Dinheiro ou Produto",
+    "titulo": "🏆 Campanha Oficial - Prêmio em Dinheiro direto no PIX",
     "descricao": (
         "Escolha seus números favoritos, preencha seus dados e gere o Pix na hora. "
         "Assim que o pagamento é confirmado, seus números ficam garantidos."
@@ -52,8 +52,8 @@ RIFA_CONFIG = {
         "3. Informe um telefone com WhatsApp e e-mail válidos para conferência.\n"
         "4. O sorteio será realizado conforme a data/critério divulgado pelo organizador."
     ),
-    "valor_cota": 10.00,
-    "total_numeros": 100,
+    "valor_cota": 55.00,
+    "total_numeros": 50,
     "colunas": 5,
     "minutos_reserva": 15,
 }
