@@ -219,8 +219,11 @@ st.session_state.selecionados = [n for n in st.session_state.selecionados if n n
 
 
 # ==============================================================================
-# INTERFACE PRINCIPAL (DESCRIÇÃO, REGRAS, DADOS, NÚMEROS E PIX)
+# INTERFACE PRINCIPAL (BANNER, DESCRIÇÃO, REGRAS, DADOS, NÚMEROS E PIX)
 # ==============================================================================
+if os.path.exists("banner_rifa.png"):
+    st.image("banner_rifa.png", use_container_width=True)
+
 st.title(RIFA_CONFIG["titulo"])
 st.write(RIFA_CONFIG["descricao"])
 
