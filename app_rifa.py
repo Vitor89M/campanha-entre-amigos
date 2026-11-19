@@ -9,7 +9,7 @@ from supabase import create_client
 # ==============================================================================
 # CONFIGURAÇÃO DA PÁGINA (VISUAL LIMPO PARA CELULAR)
 # ==============================================================================
-st.set_page_config(page_title="Ação Entre Amigos", page_icon="🎟️", layout="centered")
+st.set_page_config(page_title="Rifa Rápida", page_icon="🎟️", layout="centered")
 
 st.markdown(
     """
@@ -36,24 +36,30 @@ st.markdown(
 # ==============================================================================
 # VARIÁVEIS DE AMBIENTE / CREDENCIAIS
 # ==============================================================================
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv("SUPABASE_URL", "")).strip()
-SUPABASE_KEY = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")).strip()
-MP_ACCESS_TOKEN = st.secrets.get("MP_ACCESS_TOKEN", os.getenv("MP_ACCESS_TOKEN", "")).strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "").strip()
 
 RIFA_CONFIG = {
-    "titulo": "🏆 Ação Entre Amigos - Prêmio em Dinheiro - Pix de R$ 750,00",
+    "titulo": "🏆 Rifa Oficial - Prêmio de R$ 750,00 no Pix",
     "descricao": (
-        "Escolha seus números favoritos, preencha seus dados e gere o Pix na hora. "
-        "Assim que o pagamento é confirmado, seus números ficam garantidos."
+        "Escolha seus números favoritos, aproveite os combos com desconto, "
+        "preencha seus dados e gere o Pix na hora. Assim que o pagamento é "
+        "confirmado, seus números ficam garantidos."
     ),
     "regras": (
-        "1. Cada número selecionado soma automaticamente no valor total.\n"
-        "2. A reserva via Pix tem validade de 15 minutos; após esse prazo, números não pagos voltam a ficar livres.\n"
-        "3. Informe um telefone com WhatsApp e e-mail válidos para conferência.\n"
-        "4. O sorteio será realizado conforme a data/critério divulgado pelo organizador."
+        "1. 1 número = R$ 15,00 | Combo 2 números = R$ 28,00 | Combo 4 números = R$ 55,00.\n"
+        "2. Os combos são aplicados automaticamente na soma do carrinho.\n"
+        "3. A reserva via Pix tem validade de 15 minutos; após esse prazo, números não pagos voltam a ficar livres.\n"
+        "4. Informe um telefone com WhatsApp e e-mail válidos para conferência.\n"
+        "5. O sorteio será realizado conforme a data/critério divulgado pelo organizador."
     ),
-    "valor_cota": 55.00,
-    "total_numeros": 50,
+    "valor_cota": 15.00,
+    "valor_combo_2": 28.00,
+    "valor_combo_4": 55.00,
+    "valor_premio": 750.00,
+    "meta_liquida": 2000.00,
+    "total_numeros": 200,
     "colunas": 5,
     "minutos_reserva": 15,
 }
@@ -70,8 +76,64 @@ sb = get_supabase()
 
 
 # ==============================================================================
-# FUNÇÕES DE BANCO (SUPABASE) E MERCADO PAGO
+# FUNÇÕES DE CÁLCULO, BANCO (SUPABASE) E MERCADO PAGO
 # ==============================================================================
+def calcular_valor_combos(qtd: int) -> dict:
+    """Calcula o total priorizando pacotes de 4 (R$ 55), 2 (R$ 28) e avulsos (R$ 15)."""
+    if qtd <= 0:
+        return {
+            "qtd": 0,
+            "combos_4": 0,
+            "combos_2": 0,
+            "avulsos": 0,
+            "valor_total": 0.0,
+            "economia": 0.0,
+            "resumo_partes": [],
+            "codigo_combo": "nenhum",
+        }
+
+    combos_4, resto_4 = divmod(qtd, 4)
+    combos_2, avulsos = divmod(resto_4, 2)
+
+    valor_total = round(
+        combos_4 * RIFA_CONFIG["valor_combo_4"]
+        + combos_2 * RIFA_CONFIG["valor_combo_2"]
+        + avulsos * RIFA_CONFIG["valor_cota"],
+        2,
+    )
+    valor_sem_desconto = round(qtd * RIFA_CONFIG["valor_cota"], 2)
+    economia = round(max(0.0, valor_sem_desconto - valor_total), 2)
+
+    resumo_partes = []
+    if combos_4:
+        resumo_partes.append(f"{combos_4}x combo de 4 (R$ {combos_4 * RIFA_CONFIG['valor_combo_4']:.2f})")
+    if combos_2:
+        resumo_partes.append(f"{combos_2}x combo de 2 (R$ {combos_2 * RIFA_CONFIG['valor_combo_2']:.2f})")
+    if avulsos:
+        resumo_partes.append(f"{avulsos}x avulso (R$ {avulsos * RIFA_CONFIG['valor_cota']:.2f})")
+
+    tipos_usados = sum([bool(combos_4), bool(combos_2), bool(avulsos)])
+    if tipos_usados > 1:
+        codigo_combo = "misto"
+    elif combos_4:
+        codigo_combo = "combo_4"
+    elif combos_2:
+        codigo_combo = "combo_2"
+    else:
+        codigo_combo = "avulso"
+
+    return {
+        "qtd": qtd,
+        "combos_4": combos_4,
+        "combos_2": combos_2,
+        "avulsos": avulsos,
+        "valor_total": valor_total,
+        "economia": economia,
+        "resumo_partes": resumo_partes,
+        "codigo_combo": codigo_combo,
+    }
+
+
 def limpar_reservas_expiradas():
     if not sb:
         return
@@ -79,11 +141,47 @@ def limpar_reservas_expiradas():
     sb.table("reservas_rifa").delete().eq("status", "pendente").lt("expira_em", agora_iso).execute()
 
 
-def buscar_ocupados() -> dict[int, str]:
+def buscar_reservas() -> list[dict]:
     if not sb:
-        return {}
-    res = sb.table("reservas_rifa").select("numero, status").execute()
-    return {int(row["numero"]): str(row["status"]) for row in (res.data or [])}
+        return []
+    res = sb.table("reservas_rifa").select("numero, status, valor_total, payment_id").execute()
+    return res.data or []
+
+
+def resumir_campanha(reservas: list[dict]) -> dict:
+    """Agrupa por payment_id (ou número) para evitar somar valor_total duplicado em compras múltiplas."""
+    ocupados = {}
+    grupos_pagos = {}
+    grupos_pendentes = {}
+
+    for row in reservas:
+        num = int(row["numero"])
+        status = str(row.get("status", "")).lower()
+        ocupados[num] = status
+        chave = str(row.get("payment_id") or f"num_{num}")
+        valor = float(row.get("valor_total") or 0.0)
+
+        if status == "pago":
+            grupos_pagos[chave] = valor
+        elif status == "pendente":
+            grupos_pendentes[chave] = valor
+
+    arrecadado_pago = round(sum(grupos_pagos.values()), 2)
+    pendente_pix = round(sum(grupos_pendentes.values()), 2)
+    lucro_liquido_atual = round(arrecadado_pago - RIFA_CONFIG["valor_premio"], 2)
+    qtd_pagos = sum(1 for st_item in ocupados.values() if st_item == "pago")
+    qtd_pendentes = sum(1 for st_item in ocupados.values() if st_item == "pendente")
+    qtd_livres = RIFA_CONFIG["total_numeros"] - qtd_pagos - qtd_pendentes
+
+    return {
+        "ocupados": ocupados,
+        "arrecadado_pago": arrecadado_pago,
+        "pendente_pix": pendente_pix,
+        "lucro_liquido_atual": lucro_liquido_atual,
+        "qtd_pagos": qtd_pagos,
+        "qtd_pendentes": qtd_pendentes,
+        "qtd_livres": qtd_livres,
+    }
 
 
 def criar_pix_mercado_pago(numeros: list[int], nome: str, telefone: str, email: str, valor_total: float) -> dict:
@@ -101,7 +199,7 @@ def criar_pix_mercado_pago(numeros: list[int], nome: str, telefone: str, email: 
     }
     payload = {
         "transaction_amount": round(float(valor_total), 2),
-        "description": f"Rifa - Números: {', '.join(f'{n:02d}' for n in sorted(numeros))}",
+        "description": f"Rifa - Números: {', '.join(f'{n:03d}' for n in sorted(numeros))}",
         "payment_method_id": "pix",
         "payer": {
             "email": email.strip(),
@@ -150,10 +248,11 @@ def reservar_numeros_e_gerar_pix(numeros: list[int], nome: str, telefone: str, e
 
     limpar_reservas_expiradas()
     numeros_ordenados = sorted(set(numeros))
-    valor_total = round(len(numeros_ordenados) * RIFA_CONFIG["valor_cota"], 2)
+    calculo = calcular_valor_combos(len(numeros_ordenados))
+    valor_total = calculo["valor_total"]
     expira_em = (datetime.now(timezone.utc) + timedelta(minutes=RIFA_CONFIG["minutos_reserva"])).isoformat()
 
-    # 1. Reserva os números primeiro no Supabase para evitar que dois compradores peguem o mesmo número
+    # 1. Reserva os números primeiro no Supabase para evitar conflito entre compradores
     linhas = [
         {
             "numero": n,
@@ -183,6 +282,8 @@ def reservar_numeros_e_gerar_pix(numeros: list[int], nome: str, telefone: str, e
         "payment_id": pix["payment_id"],
         "numeros": numeros_ordenados,
         "valor_total": valor_total,
+        "economia": calculo["economia"],
+        "detalhe_combos": " + ".join(calculo["resumo_partes"]),
         "qr_code": pix["qr_code"],
         "qr_code_base64": pix["qr_code_base64"],
         "status_pagamento": "pending",
@@ -199,7 +300,7 @@ if "pix_atual" not in st.session_state:
 
 
 # ==============================================================================
-# VERIFICAÇÃO INICIAL DE CREDENCIAIS
+# VERIFICAÇÃO INICIAL DE CREDENCIAIS E DADOS DO SUPABASE
 # ==============================================================================
 if not SUPABASE_URL or not SUPABASE_KEY or not MP_ACCESS_TOKEN:
     st.warning(
@@ -209,30 +310,48 @@ if not SUPABASE_URL or not SUPABASE_KEY or not MP_ACCESS_TOKEN:
 
 try:
     limpar_reservas_expiradas()
-    ocupados = buscar_ocupados()
+    reservas_atuais = buscar_reservas()
+    resumo_campanha = resumir_campanha(reservas_atuais)
 except Exception as exc:
     st.error(f"Erro ao conectar no Supabase: {exc}")
-    ocupados = {}
+    resumo_campanha = {
+        "ocupados": {},
+        "arrecadado_pago": 0.0,
+        "pendente_pix": 0.0,
+        "lucro_liquido_atual": -RIFA_CONFIG["valor_premio"],
+        "qtd_pagos": 0,
+        "qtd_pendentes": 0,
+        "qtd_livres": RIFA_CONFIG["total_numeros"],
+    }
+
+ocupados = resumo_campanha["ocupados"]
 
 # Remove da seleção local algum número que acabou de ser ocupado por outra pessoa
 st.session_state.selecionados = [n for n in st.session_state.selecionados if n not in ocupados]
 
 
 # ==============================================================================
-# INTERFACE PRINCIPAL (BANNER, DESCRIÇÃO, REGRAS, DADOS, NÚMEROS E PIX)
+# INTERFACE PRINCIPAL (DESCRIÇÃO, REGRAS, DADOS, NÚMEROS E PIX)
 # ==============================================================================
-if os.path.exists("banner_rifa.png"):
-    st.image("banner_rifa.png", use_container_width=True)
-
 st.title(RIFA_CONFIG["titulo"])
 st.write(RIFA_CONFIG["descricao"])
 
-with st.expander("📜 Regras da Ação", expanded=True):
+with st.expander("📜 Regras e Combos da Rifa", expanded=True):
     st.markdown(RIFA_CONFIG["regras"].replace("\n", "  \n"))
 
+with st.expander("📊 Resumo da Campanha (Prêmio R$ 750 | Meta R$ 2.000)", expanded=False):
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Pagos", f"{resumo_campanha['qtd_pagos']}/{RIFA_CONFIG['total_numeros']}")
+    c2.metric("Arrecadado", f"R$ {resumo_campanha['arrecadado_pago']:.2f}")
+    c3.metric("Líquido vs Prêmio", f"R$ {resumo_campanha['lucro_liquido_atual']:.2f}")
+    st.caption(
+        f"Livres: **{resumo_campanha['qtd_livres']}** · "
+        f"Reservados (aguardando Pix): **{resumo_campanha['qtd_pendentes']}** · "
+        f"Meta líquida: **R$ {RIFA_CONFIG['meta_liquida']:.2f}**"
+    )
+
 st.caption(
-    f"Valor por número: **R$ {RIFA_CONFIG['valor_cota']:.2f}** · "
-    f"Total de números: **{RIFA_CONFIG['total_numeros']}** · "
+    "1 número: **R$ 15,00** · 2 números: **R$ 28,00** · 4 números: **R$ 55,00** · "
     "🟢 Livre | 🟡 Reservado | 🔴 Pago"
 )
 
@@ -246,7 +365,7 @@ email = st.text_input("E-mail", placeholder="Ex: carlos@email.com")
 
 st.divider()
 
-# 2. Grade de números
+# 2. Grade de números (001 a 200)
 st.subheader("2. Escolha seu(s) número(s)")
 
 cols = st.columns(RIFA_CONFIG["colunas"])
@@ -255,12 +374,12 @@ for num in range(1, RIFA_CONFIG["total_numeros"] + 1):
     status = ocupados.get(num)
 
     if status == "pago":
-        col.button(f"🔴 {num:02d}", key=f"num_{num}", disabled=True)
+        col.button(f"🔴 {num:03d}", key=f"num_{num}", disabled=True)
     elif status == "pendente":
-        col.button(f"🟡 {num:02d}", key=f"num_{num}", disabled=True)
+        col.button(f"🟡 {num:03d}", key=f"num_{num}", disabled=True)
     else:
         esta_marcado = num in st.session_state.selecionados
-        rotulo = f"🟢 {num:02d} ✓" if esta_marcado else f"🟢 {num:02d}"
+        rotulo = f"🟢 {num:03d} ✓" if esta_marcado else f"🟢 {num:03d}"
         if col.button(rotulo, key=f"num_{num}"):
             if esta_marcado:
                 st.session_state.selecionados.remove(num)
@@ -268,21 +387,29 @@ for num in range(1, RIFA_CONFIG["total_numeros"] + 1):
                 st.session_state.selecionados.append(num)
             st.rerun()
 
-# 3. Soma e geração do Pix
+# 3. Soma com combos e geração do Pix
 qtd_selecionados = len(st.session_state.selecionados)
-soma_total = round(qtd_selecionados * RIFA_CONFIG["valor_cota"], 2)
+calculo_atual = calcular_valor_combos(qtd_selecionados)
+soma_total = calculo_atual["valor_total"]
 
 st.divider()
 st.subheader("3. Resumo e Pagamento Pix")
 
 if qtd_selecionados > 0:
-    numeros_fmt = ", ".join(f"{n:02d}" for n in sorted(st.session_state.selecionados))
+    numeros_fmt = ", ".join(f"{n:03d}" for n in sorted(st.session_state.selecionados))
+    detalhe_combos = " + ".join(calculo_atual["resumo_partes"])
+    linha_economia = (
+        f"  \n🎉 **Economia no combo:** R$ {calculo_atual['economia']:.2f}"
+        if calculo_atual["economia"] > 0
+        else ""
+    )
     st.info(
         f"**Números escolhidos ({qtd_selecionados}):** {numeros_fmt}  \n"
-        f"**Valor total:** **R$ {soma_total:.2f}**"
+        f"**Composição:** {detalhe_combos}  \n"
+        f"**Valor total:** **R$ {soma_total:.2f}**{linha_economia}"
     )
 else:
-    st.caption("Selecione um ou mais números verdes acima para calcular o valor total.")
+    st.caption("Selecione um ou mais números verdes acima (1 por R$ 15, 2 por R$ 28 ou 4 por R$ 55).")
 
 if st.button("💠 Gerar QR Code Pix Mercado Pago", type="primary", disabled=(qtd_selecionados == 0)):
     if not nome.strip() or not telefone.strip() or not email.strip():
@@ -309,37 +436,34 @@ if st.button("💠 Gerar QR Code Pix Mercado Pago", type="primary", disabled=(qt
 # 4. Exibição do QR Code Pix e conferência de pagamento
 if st.session_state.pix_atual:
     pix = st.session_state.pix_atual
-    nums_str = ", ".join(f"{n:02d}" for n in pix["numeros"])
+    nums_str = ", ".join(f"{n:03d}" for n in pix["numeros"])
 
-    if pix.get("status_pagamento") == "approved":
-        st.success(
-            f"✅ Pagamento aprovado! Os números **{nums_str}** (R$ {pix['valor_total']:.2f}) já estão garantidos como PAGO."
-        )
-        if st.button("➕ Escolher mais números"):
+    st.success(
+        f"Pix gerado para os números **{nums_str}** — Total: **R$ {pix['valor_total']:.2f}**"
+    )
+    if pix.get("detalhe_combos"):
+        st.caption(f"Composição: {pix['detalhe_combos']}")
+
+    st.image(base64.b64decode(pix["qr_code_base64"]), caption="Escaneie o QR Code no app do seu banco", width=240)
+
+    st.text_input("Pix Copia e Cola", value=pix["qr_code"])
+
+    col_chk, col_new = st.columns(2)
+    with col_chk:
+        if st.button("🔄 Já paguei, conferir"):
+            try:
+                status_mp = consultar_status_pix(pix["payment_id"])
+                if status_mp == "approved":
+                    marcar_pagamento_como_pago(pix["payment_id"])
+                    pix["status_pagamento"] = "approved"
+                    st.success("Pagamento aprovado! Seus números agora estão confirmados como PAGO.")
+                    st.rerun()
+                else:
+                    st.info(f"Pagamento ainda em análise/pendente (status: {status_mp}). Aguarde alguns segundos e tente de novo.")
+            except Exception as exc:
+                st.error(f"Erro ao consultar pagamento: {exc}")
+
+    with col_new:
+        if st.button("➕ Escolher mais"):
             st.session_state.pix_atual = None
             st.rerun()
-    else:
-        st.info(
-            f"Pix gerado para os números **{nums_str}** — Total: **R$ {pix['valor_total']:.2f}**"
-        )
-        st.image(base64.b64decode(pix["qr_code_base64"]), caption="Escaneie o QR Code no app do seu banco", width=240)
-        st.code(pix["qr_code"], language=None)
-
-        col_chk, col_new = st.columns(2)
-        with col_chk:
-            if st.button("🔄 Já paguei, conferir"):
-                try:
-                    status_mp = consultar_status_pix(pix["payment_id"])
-                    if status_mp == "approved":
-                        marcar_pagamento_como_pago(pix["payment_id"])
-                        pix["status_pagamento"] = "approved"
-                        st.rerun()
-                    else:
-                        st.warning(f"Pagamento ainda pendente (status: {status_mp}). Aguarde alguns segundos e clique novamente.")
-                except Exception as exc:
-                    st.error(f"Erro ao consultar pagamento: {exc}")
-
-        with col_new:
-            if st.button("➕ Escolher mais"):
-                st.session_state.pix_atual = None
-                st.rerun()
