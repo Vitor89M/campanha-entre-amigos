@@ -1,6 +1,7 @@
 import os
 import uuid
 import base64
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import requests
 import streamlit as st
@@ -48,6 +49,8 @@ def get_secret(name: str) -> str:
 SUPABASE_URL = get_secret("SUPABASE_URL")
 SUPABASE_KEY = get_secret("SUPABASE_SERVICE_ROLE_KEY")
 MP_ACCESS_TOKEN = get_secret("MP_ACCESS_TOKEN")
+
+BANNER_PATH = Path(__file__).resolve().parent / "banner_campanha.jpg"
 
 RIFA_CONFIG = {
     "titulo": "🏆 Campanha Oficial - Prêmio de R$ 750,00 no Pix",
@@ -309,8 +312,11 @@ if "pix_atual" not in st.session_state:
 
 
 # ==============================================================================
-# CABEÇALHO E REGRAS
+# BANNER, CABEÇALHO E REGRAS
 # ==============================================================================
+if BANNER_PATH.exists():
+    st.image(str(BANNER_PATH), use_container_width=True)
+
 st.title(RIFA_CONFIG["titulo"])
 st.write(RIFA_CONFIG["descricao"])
 
@@ -361,26 +367,6 @@ ocupados = resumo_campanha["ocupados"]
 
 # Remove da seleção local algum número que acabou de ser ocupado por outra pessoa
 st.session_state.selecionados = [n for n in st.session_state.selecionados if n not in ocupados]
-
-
-# ==============================================================================
-# RESUMO DA CAMPANHA, DADOS, GRADE DE NÚMEROS E PIX
-# ==============================================================================
-with st.expander("📊 Resumo da Campanha (Prêmio R$ 750 | Meta R$ 2.000)", expanded=False):
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Pagos", f"{resumo_campanha['qtd_pagos']}/{RIFA_CONFIG['total_numeros']}")
-    c2.metric("Arrecadado", f"R$ {resumo_campanha['arrecadado_pago']:.2f}")
-    c3.metric("Líquido vs Prêmio", f"R$ {resumo_campanha['lucro_liquido_atual']:.2f}")
-    st.caption(
-        f"Livres: **{resumo_campanha['qtd_livres']}** · "
-        f"Reservados (aguardando Pix): **{resumo_campanha['qtd_pendentes']}** · "
-        f"Meta líquida: **R$ {RIFA_CONFIG['meta_liquida']:.2f}**"
-    )
-
-st.caption(
-    "1 número: **R$ 15,00** · 2 números: **R$ 28,00** · 4 números: **R$ 55,00** · "
-    "🟢 Livre | 🟡 Reservado | 🔴 Pago"
-)
 
 st.divider()
 
