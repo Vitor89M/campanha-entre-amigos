@@ -9,7 +9,7 @@ from supabase import create_client
 # ==============================================================================
 # CONFIGURAÇÃO DA PÁGINA (VISUAL LIMPO PARA CELULAR)
 # ==============================================================================
-st.set_page_config(page_title="Rifa Rápida", page_icon="🎟️", layout="centered")
+st.set_page_config(page_title="Campanha Rápida", page_icon="🎟️", layout="centered")
 
 st.markdown(
     """
@@ -34,14 +34,23 @@ st.markdown(
 )
 
 # ==============================================================================
-# VARIÁVEIS DE AMBIENTE / CREDENCIAIS
+# VARIÁVEIS DE AMBIENTE / SECRETS
 # ==============================================================================
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN", "").strip()
+def get_secret(name: str) -> str:
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name]).strip()
+    except Exception:
+        pass
+    return os.getenv(name, "").strip()
+
+
+SUPABASE_URL = get_secret("SUPABASE_URL")
+SUPABASE_KEY = get_secret("SUPABASE_SERVICE_ROLE_KEY")
+MP_ACCESS_TOKEN = get_secret("MP_ACCESS_TOKEN")
 
 RIFA_CONFIG = {
-    "titulo": "🏆 Rifa Oficial - Prêmio de R$ 750,00 no Pix",
+    "titulo": "🏆 Campanha Oficial - Prêmio de R$ 750,00 no Pix",
     "descricao": (
         "Escolha seus números favoritos, aproveite os combos com desconto, "
         "preencha seus dados e gere o Pix na hora. Assim que o pagamento é "
@@ -300,29 +309,53 @@ if "pix_atual" not in st.session_state:
 
 
 # ==============================================================================
-# VERIFICAÇÃO INICIAL DE CREDENCIAIS E DADOS DO SUPABASE
+# CABEÇALHO E REGRAS
+# ==============================================================================
+st.title(RIFA_CONFIG["titulo"])
+st.write(RIFA_CONFIG["descricao"])
+
+with st.expander("📜 Regras e Combos da Campanha", expanded=True):
+    st.markdown(RIFA_CONFIG["regras"].replace("\n", "  \n"))
+
+# ==============================================================================
+# VERIFICAÇÃO DE CREDENCIAIS E CONEXÃO COM SUPABASE
 # ==============================================================================
 if not SUPABASE_URL or not SUPABASE_KEY or not MP_ACCESS_TOKEN:
     st.warning(
-        "Configuração pendente: defina as variáveis de ambiente "
-        "`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `MP_ACCESS_TOKEN` antes de abrir para os compradores."
+        "Configuração pendente: defina `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` "
+        "e `MP_ACCESS_TOKEN` nos Secrets do Streamlit Cloud (ou variáveis de ambiente)."
     )
 
-try:
-    limpar_reservas_expiradas()
-    reservas_atuais = buscar_reservas()
-    resumo_campanha = resumir_campanha(reservas_atuais)
-except Exception as exc:
-    st.error(f"Erro ao conectar no Supabase: {exc}")
-    resumo_campanha = {
-        "ocupados": {},
-        "arrecadado_pago": 0.0,
-        "pendente_pix": 0.0,
-        "lucro_liquido_atual": -RIFA_CONFIG["valor_premio"],
-        "qtd_pagos": 0,
-        "qtd_pendentes": 0,
-        "qtd_livres": RIFA_CONFIG["total_numeros"],
-    }
+conexao_ok = False
+resumo_campanha = {
+    "ocupados": {},
+    "arrecadado_pago": 0.0,
+    "pendente_pix": 0.0,
+    "lucro_liquido_atual": -RIFA_CONFIG["valor_premio"],
+    "qtd_pagos": 0,
+    "qtd_pendentes": 0,
+    "qtd_livres": RIFA_CONFIG["total_numeros"],
+}
+
+if sb:
+    try:
+        limpar_reservas_expiradas()
+        reservas_atuais = buscar_reservas()
+        resumo_campanha = resumir_campanha(reservas_atuais)
+        conexao_ok = True
+    except Exception as exc:
+        st.error(f"Erro ao conectar no Supabase: {exc}")
+        st.info(
+            "Confira se a `SUPABASE_URL` está no formato `https://<ref>.supabase.co`, "
+            "sem espaços extras, e se o projeto no Supabase está ativo."
+        )
+        if st.button("🔄 Tentar reconectar"):
+            st.cache_resource.clear()
+            st.rerun()
+
+if not conexao_ok:
+    st.warning("A seleção de números fica temporariamente indisponível enquanto a conexão com o banco não é restabelecida.")
+    st.stop()
 
 ocupados = resumo_campanha["ocupados"]
 
@@ -331,14 +364,8 @@ st.session_state.selecionados = [n for n in st.session_state.selecionados if n n
 
 
 # ==============================================================================
-# INTERFACE PRINCIPAL (DESCRIÇÃO, REGRAS, DADOS, NÚMEROS E PIX)
+# RESUMO DA CAMPANHA, DADOS, GRADE DE NÚMEROS E PIX
 # ==============================================================================
-st.title(RIFA_CONFIG["titulo"])
-st.write(RIFA_CONFIG["descricao"])
-
-with st.expander("📜 Regras e Combos da Rifa", expanded=True):
-    st.markdown(RIFA_CONFIG["regras"].replace("\n", "  \n"))
-
 with st.expander("📊 Resumo da Campanha (Prêmio R$ 750 | Meta R$ 2.000)", expanded=False):
     c1, c2, c3 = st.columns(3)
     c1.metric("Pagos", f"{resumo_campanha['qtd_pagos']}/{RIFA_CONFIG['total_numeros']}")
