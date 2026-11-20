@@ -80,9 +80,12 @@ BANNER_PATH = Path(__file__).resolve().parent / "banner_campanha.jpg"
 RIFA_CONFIG = {
     "titulo": "🏆 Campanha Oficial - Prêmio de R$ 750,00 no Pix",
     "descricao": (
-        "Escolha seus números favoritos, aproveite os combos com desconto, "
-        "preencha seus dados e gere o Pix na hora. Assim que o pagamento é "
-        "confirmado, seus números ficam garantidos."
+        "Esta campanha entre amigos foi criada para me ajudar a complementar o valor "
+        "de custo de uma bicicleta elétrica, que vou usar para fazer entregas como "
+        "complemento de renda. Escolha seus números favoritos, aproveite os combos "
+        "com desconto, preencha seus dados e gere o Pix na hora. Como agradecimento "
+        "a todos que participarem, faremos o sorteio de R$ 750,00 no Pix assim que "
+        "fecharmos os números."
     ),
     "regras": (
         "1. 1 número = R$ 15,00 | Combo 2 números = R$ 28,00 | Combo 4 números = R$ 55,00.\n"
