@@ -85,7 +85,8 @@ RIFA_CONFIG = {
         "complemento de renda. Escolha seus números favoritos, aproveite os combos "
         "com desconto, preencha seus dados e gere o Pix na hora. Como agradecimento "
         "a todos que participarem, faremos o sorteio de R$ 750,00 no Pix assim que "
-        "fecharmos os números."
+        "todos os 200 números forem preenchidos (a data e o horário serão divulgados "
+        "previamente no grupo/redes sociais)."
     ),
     "regras": (
         "1. 1 número = R$ 15,00 | Combo 2 números = R$ 28,00 | Combo 4 números = R$ 55,00.\n"
