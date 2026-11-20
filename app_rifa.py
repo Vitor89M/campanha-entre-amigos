@@ -8,7 +8,7 @@ import streamlit as st
 from supabase import create_client
 
 # ==============================================================================
-# CONFIGURAÇÃO DA PÁGINA (VISUAL LIMPO PARA CELULAR)
+# CONFIGURAÇÃO DA PÁGINA (VISUAL LIMPO PARA CELULAR E COMPUTADOR)
 # ==============================================================================
 st.set_page_config(page_title="Campanha Rápida", page_icon="🎟️", layout="centered")
 
@@ -18,21 +18,46 @@ st.markdown(
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
+
         .block-container {
             padding-top: 1rem;
             padding-bottom: 4rem;
             max-width: 520px;
         }
+
         div.stButton > button {
             width: 100%;
             border-radius: 10px;
             font-weight: 700;
             min-height: 2.6rem;
         }
+
+        /* Mantém as 5 colunas da grade de números lado a lado no celular */
+        @media (max-width: 640px) {
+            [data-testid="stHorizontalBlock"] {
+                flex-wrap: nowrap !important;
+                gap: 0.25rem !important;
+            }
+            [data-testid="stHorizontalBlock"] > div[data-testid="column"],
+            [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+                min-width: 0 !important;
+                flex: 1 1 0 !important;
+                width: auto !important;
+            }
+            [data-testid="stHorizontalBlock"] div.stButton > button {
+                padding: 0.2rem 0.05rem !important;
+                font-size: 0.68rem !important;
+                line-height: 1.1 !important;
+                min-height: 2.15rem !important;
+                border-radius: 8px !important;
+                white-space: nowrap !important;
+            }
+        }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
 
 # ==============================================================================
 # VARIÁVEIS DE AMBIENTE / SECRETS
@@ -161,39 +186,14 @@ def buscar_reservas() -> list[dict]:
 
 
 def resumir_campanha(reservas: list[dict]) -> dict:
-    """Agrupa por payment_id (ou número) para evitar somar valor_total duplicado em compras múltiplas."""
+    """Mapeia os números ocupados e consolida totais."""
     ocupados = {}
-    grupos_pagos = {}
-    grupos_pendentes = {}
-
     for row in reservas:
         num = int(row["numero"])
         status = str(row.get("status", "")).lower()
         ocupados[num] = status
-        chave = str(row.get("payment_id") or f"num_{num}")
-        valor = float(row.get("valor_total") or 0.0)
 
-        if status == "pago":
-            grupos_pagos[chave] = valor
-        elif status == "pendente":
-            grupos_pendentes[chave] = valor
-
-    arrecadado_pago = round(sum(grupos_pagos.values()), 2)
-    pendente_pix = round(sum(grupos_pendentes.values()), 2)
-    lucro_liquido_atual = round(arrecadado_pago - RIFA_CONFIG["valor_premio"], 2)
-    qtd_pagos = sum(1 for st_item in ocupados.values() if st_item == "pago")
-    qtd_pendentes = sum(1 for st_item in ocupados.values() if st_item == "pendente")
-    qtd_livres = RIFA_CONFIG["total_numeros"] - qtd_pagos - qtd_pendentes
-
-    return {
-        "ocupados": ocupados,
-        "arrecadado_pago": arrecadado_pago,
-        "pendente_pix": pendente_pix,
-        "lucro_liquido_atual": lucro_liquido_atual,
-        "qtd_pagos": qtd_pagos,
-        "qtd_pendentes": qtd_pendentes,
-        "qtd_livres": qtd_livres,
-    }
+    return {"ocupados": ocupados}
 
 
 def criar_pix_mercado_pago(numeros: list[int], nome: str, telefone: str, email: str, valor_total: float) -> dict:
@@ -323,6 +323,7 @@ st.write(RIFA_CONFIG["descricao"])
 with st.expander("📜 Regras e Combos da Campanha", expanded=True):
     st.markdown(RIFA_CONFIG["regras"].replace("\n", "  \n"))
 
+
 # ==============================================================================
 # VERIFICAÇÃO DE CREDENCIAIS E CONEXÃO COM SUPABASE
 # ==============================================================================
@@ -333,15 +334,7 @@ if not SUPABASE_URL or not SUPABASE_KEY or not MP_ACCESS_TOKEN:
     )
 
 conexao_ok = False
-resumo_campanha = {
-    "ocupados": {},
-    "arrecadado_pago": 0.0,
-    "pendente_pix": 0.0,
-    "lucro_liquido_atual": -RIFA_CONFIG["valor_premio"],
-    "qtd_pagos": 0,
-    "qtd_pendentes": 0,
-    "qtd_livres": RIFA_CONFIG["total_numeros"],
-}
+resumo_campanha = {"ocupados": {}}
 
 if sb:
     try:
@@ -370,7 +363,9 @@ st.session_state.selecionados = [n for n in st.session_state.selecionados if n n
 
 st.divider()
 
-# 1. Dados do comprador
+# ==============================================================================
+# 1. DADOS DO COMPRADOR
+# ==============================================================================
 st.subheader("1. Seus dados")
 nome = st.text_input("Nome completo", placeholder="Ex: Carlos Eduardo")
 telefone = st.text_input("Telefone / WhatsApp", placeholder="Ex: 11999998888")
@@ -378,7 +373,9 @@ email = st.text_input("E-mail", placeholder="Ex: carlos@email.com")
 
 st.divider()
 
-# 2. Grade de números (001 a 200)
+# ==============================================================================
+# 2. GRADE DE NÚMEROS (001 A 200)
+# ==============================================================================
 st.subheader("2. Escolha seu(s) número(s)")
 
 cols = st.columns(RIFA_CONFIG["colunas"])
@@ -392,7 +389,7 @@ for num in range(1, RIFA_CONFIG["total_numeros"] + 1):
         col.button(f"🟡 {num:03d}", key=f"num_{num}", disabled=True)
     else:
         esta_marcado = num in st.session_state.selecionados
-        rotulo = f"🟢 {num:03d} ✓" if esta_marcado else f"🟢 {num:03d}"
+        rotulo = f"🟢 {num:03d}✓" if esta_marcado else f"🟢 {num:03d}"
         if col.button(rotulo, key=f"num_{num}"):
             if esta_marcado:
                 st.session_state.selecionados.remove(num)
@@ -400,7 +397,9 @@ for num in range(1, RIFA_CONFIG["total_numeros"] + 1):
                 st.session_state.selecionados.append(num)
             st.rerun()
 
-# 3. Soma com combos e geração do Pix
+# ==============================================================================
+# 3. RESUMO E PAGAMENTO PIX
+# ==============================================================================
 qtd_selecionados = len(st.session_state.selecionados)
 calculo_atual = calcular_valor_combos(qtd_selecionados)
 soma_total = calculo_atual["valor_total"]
@@ -446,7 +445,9 @@ if st.button("💠 Gerar QR Code Pix Mercado Pago", type="primary", disabled=(qt
             else:
                 st.error(f"Não foi possível gerar o Pix agora: {exc}")
 
-# 4. Exibição do QR Code Pix e conferência de pagamento
+# ==============================================================================
+# 4. EXIBIÇÃO DO QR CODE PIX E CONFERÊNCIA DE PAGAMENTO
+# ==============================================================================
 if st.session_state.pix_atual:
     pix = st.session_state.pix_atual
     nums_str = ", ".join(f"{n:03d}" for n in pix["numeros"])
